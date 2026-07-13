@@ -1,36 +1,104 @@
-name: Build and Push Docker Image
+name: CI/CD
+
+# GitHub Actions が deployment.yaml を更新して push するための権限
+permissions:
+  contents: write
 
 on:
+  # feature と main へ push したら実行
   push:
     branches:
       - main
       - feature/**
+    paths-ignore:
+      - "k8s/deployment.yaml"
 
+  # PR を作成・更新したら実行
   pull_request:
-    branches:
-      - main
+   branches:
+     - main
 
 jobs:
-  docker-build:
+  docker:
     runs-on: ubuntu-latest
 
     steps:
+      # -----------------------------
+      # ソースコード取得
+      # -----------------------------
       - name: Checkout Repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
+      # -----------------------------
+      # Buildx準備
+      # -----------------------------
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Log in to Docker Hub
+      # -----------------------------
+      # Buildだけ実施（Pushしない）
+      # feature・PR・main 全てでBuildを実行
+      # -----------------------------
+      - name: Build Docker Image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./app
+          file: ./app/Dockerfile
+          push: false
+          tags: ponychan3/my-app:${{ github.sha }}
+
+      # -----------------------------
+      # mainだけDocker Hubへログイン
+      # -----------------------------
+      - name: Login to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and Push Docker Image
+      # -----------------------------
+      # mainだけDocker HubへPush
+      # -----------------------------
+      - name: Push Docker Image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v7
         with:
           context: ./app
           file: ./app/Dockerfile
           push: true
-          tags: ponychan3/my-app:latest
+          tags: ponychan3/my-app:${{ github.sha }}
+
+      # -----------------------------
+      # deployment.yaml の image を更新
+      # -----------------------------
+      - name: Update deployment.yaml
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          sed -i "s|image: .*|image: ponychan3/my-app:${{ github.sha }}|" k8s/deployment.yaml
+
+      # -----------------------------
+      # Git設定
+      # -----------------------------
+      - name: Configure Git
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+      # -----------------------------
+      # deployment.yaml を Commit
+      # -----------------------------
+      - name: Commit deployment.yaml
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          git add k8s/deployment.yaml
+
+          if git diff --cached --quiet; then
+           echo "No changes to commit"
+          else
+           git commit -m "Update image to ${{ github.sha }} [skip ci]"
+           git push origin HEAD
+          fi
