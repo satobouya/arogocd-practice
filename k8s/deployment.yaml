@@ -5,7 +5,8 @@ metadata:
   name: my-app
 
 spec:
-  replicas: 2
+  replicas: 1
+  minReadySeconds: 5
 
   strategy:
    type: RollingUpdate
@@ -28,3 +29,12 @@ spec:
         image: ponychan3/my-app:latest
         ports:
         - containerPort: 80
+
+      readinessProbe:
+        httpGet:
+         path: /
+         port: 80
+        initialDelaySeconds: 2
+        periodSeconds: 2
+        timeoutSeconds: 1
+        failureThreshold: 3
