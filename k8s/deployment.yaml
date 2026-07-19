@@ -26,7 +26,7 @@ spec:
     spec:
       containers:
       - name: my-app
-        image: ponychan3/my-app:d3377f7a304af6b05539f1c31446daa0439fe5d3
+        image: ponychan3/my-app:3f7b296f4e50bbfbeb1b1b213ccc4ef2f22e2e71
         ports:
         - containerPort: 80
 
