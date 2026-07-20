@@ -6,13 +6,13 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: my-app.local
+    - host: localhost
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: my-app-service
+                name: oauth2-proxy
                 port:
-                  number: 80
+                  number: 4180

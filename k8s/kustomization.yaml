@@ -5,3 +5,4 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
+  - oauth2-proxy.yaml

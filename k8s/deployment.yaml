@@ -9,10 +9,10 @@ spec:
   minReadySeconds: 5
 
   strategy:
-   type: RollingUpdate
-   rollingUpdate:
-    maxUnavailable: 0
-    maxSurge: 1
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
 
   selector:
     matchLabels:
@@ -25,16 +25,15 @@ spec:
 
     spec:
       containers:
-      - name: my-app
-        image: ponychan3/my-app:f3a3edc6720010fdb1f4a46decc813140922b3bc
-        ports:
-        - containerPort: 80
-
-        readinessProbe:
-          httpGet:
-           path: /
-           port: 80
-          initialDelaySeconds: 2
-          periodSeconds: 2
-          timeoutSeconds: 1
-          failureThreshold: 3
+        - name: my-app
+          image: ponychan3/my-app:f3a3edc6720010fdb1f4a46decc813140922b3bc
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 3
