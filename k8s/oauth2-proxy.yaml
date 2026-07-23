@@ -1,59 +1,119 @@
+# ============================================================
+# oauth2-proxyを起動・維持するDeployment
+# ============================================================
 apiVersion: apps/v1
 kind: Deployment
+
 metadata:
+  # Kubernetes上のDeployment名
   name: oauth2-proxy
+
+  # my-appと同じdefault Namespaceへ作成
   namespace: default
 
 spec:
+  # ローカル学習環境なのでoauth2-proxy Podは1個
   replicas: 1
 
+  # このDeploymentが管理するPodをラベルで特定する
   selector:
     matchLabels:
       app: oauth2-proxy
 
+  # ここから下が、実際に作成されるPodの設計図
   template:
     metadata:
+      # Serviceのselectorと一致させるラベル
       labels:
         app: oauth2-proxy
 
     spec:
+      # Pod内で動かすコンテナ一覧
       containers:
+        # oauth2-proxyコンテナ
         - name: oauth2-proxy
+
+          # oauth2-proxyのコンテナイメージ
           image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.3
 
+          # oauth2-proxy起動時の設定
           args:
+            # Googleを認証プロバイダーとして使用
             - --provider=google
+
+            # Pod外のServiceから接続できるように、
+            # すべてのネットワークインターフェースの4180番で待ち受ける
             - --http-address=0.0.0.0:4180
+
+            # Googleログイン後に戻ってくるURL
+            # Google Cloud側の承認済みリダイレクトURIと完全一致させる
             - --redirect-url=http://localhost:8081/oauth2/callback
+
+            # 認証・認可に成功した後の転送先
+            # my-app-serviceの80番ポートへ転送する
             - --upstream=http://my-app-service.default.svc.cluster.local:80
-            - --email-domain=*
+
+            # ConfigMapからマウントした許可メール一覧を読み込む
+            - --authenticated-emails-file=/etc/oauth2-proxy/allowed-emails
+
+            # 現在はHTTPのローカル環境なのでSecure Cookieを無効化
+            # 本番HTTPS環境ではtrueにする
             - --cookie-secure=false
+
+            # oauth2-proxyの中間サインイン画面を省略し、
+            # Googleログイン画面へ直接移動させる
             - --skip-provider-button=true
 
+            # 認証済みユーザー情報をupstreamへヘッダーで渡す
+            - --pass-user-headers=true
+
+          # Secretの値をコンテナの環境変数として渡す
           env:
+            # Google OAuth Client ID
             - name: OAUTH2_PROXY_CLIENT_ID
               valueFrom:
                 secretKeyRef:
+                  # 手動作成済みのSecret名
                   name: oauth2-proxy-secrets
+
+                  # Secret内のキー名
                   key: client-id
 
+            # Google OAuth Client Secret
             - name: OAUTH2_PROXY_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: oauth2-proxy-secrets
                   key: client-secret
 
+            # oauth2-proxyのセッションCookieを保護する秘密値
             - name: OAUTH2_PROXY_COOKIE_SECRET
               valueFrom:
                 secretKeyRef:
                   name: oauth2-proxy-secrets
                   key: cookie-secret
 
+          # コンテナが公開するポート
           ports:
             - name: http
               containerPort: 4180
               protocol: TCP
 
+          # ----------------------------------------------------
+          # Podに用意したVolumeを、
+          # oauth2-proxyコンテナ内へ接続する設定
+          # ----------------------------------------------------
+          volumeMounts:
+            # 下部のvolumes.nameと一致させる
+            - name: allowed-emails
+
+              # コンテナ内のマウント先ディレクトリ
+              mountPath: /etc/oauth2-proxy
+
+              # コンテナから許可リストを書き換えさせない
+              readOnly: true
+
+          # リクエストを受け付けられる状態かを確認
           readinessProbe:
             httpGet:
               path: /ready
@@ -61,6 +121,7 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
 
+          # プロセスが生存しているかを確認
           livenessProbe:
             httpGet:
               path: /ping
@@ -68,21 +129,59 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
 
+      # --------------------------------------------------------
+      # Podが利用するVolumeの定義
+      #
+      # 注意：
+      # containersの中ではなく、containersと同じ階層
+      # --------------------------------------------------------
+      volumes:
+        # volumeMounts.nameと一致させる任意のVolume名
+        - name: allowed-emails
+
+          # ConfigMapをVolumeのデータ源として使う
+          configMap:
+            # kubectlで手動作成したConfigMap名
+            name: oauth2-proxy-allowed-emails
+
+            # ConfigMapのどのキーを、
+            # どのファイル名として配置するか
+            items:
+              # ConfigMap内のキー名
+              - key: allowed-emails
+
+                # マウント先に作られるファイル名
+                path: allowed-emails
+
 ---
+
+# ============================================================
+# oauth2-proxy Podへ接続するためのService
+# ============================================================
 apiVersion: v1
 kind: Service
+
 metadata:
+  # Ingressのbackendから指定するService名
   name: oauth2-proxy
   namespace: default
 
 spec:
+  # app=oauth2-proxyラベルを持つPodへ転送する
   selector:
     app: oauth2-proxy
 
   ports:
+    # Serviceが提供するポート
     - name: http
+
+      # IngressからServiceへ接続するポート
       port: 4180
+
+      # Podのports.name=httpへ転送
       targetPort: http
+
       protocol: TCP
 
+  # Kubernetesクラスタ内部専用のService
   type: ClusterIP
